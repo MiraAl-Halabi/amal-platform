@@ -6,7 +6,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
-RUN npm run build
+RUN npx vite build
 
 # Stage 2: Build Backend (.NET 10)
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
@@ -26,7 +26,7 @@ COPY --from=backend-build /app/publish ./
 # Copy built frontend into wwwroot for ASP.NET Static Files serving
 COPY --from=frontend-build /app/frontend/dist ./wwwroot
 
-# Expose port (Render automatically maps PORT or 8080/5000)
+# Expose port (Render sets $PORT dynamically)
 ENV ASPNETCORE_URLS=http://+:8080
 ENV PORT=8080
 EXPOSE 8080
