@@ -20,7 +20,8 @@ import {
   UserCheck,
   Check,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
+  Users
 } from 'lucide-react';
 
 interface Organization {
