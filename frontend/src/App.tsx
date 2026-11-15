@@ -155,8 +155,9 @@ export function App() {
         if (user.role === 'JobSeeker') {
           fetchUserApplications(user.id);
           setActiveTab('browse');
-        } else if (user.role === 'Recruiter' && user.organization) {
-          fetchRecruiterApplications(user.organization.id);
+        } else if (user.role === 'Recruiter') {
+          const orgId = user.organization?.id || '11111111-1111-1111-1111-111111111111';
+          fetchRecruiterApplications(orgId);
           setActiveTab('recruiter-pipeline');
         } else if (user.role === 'Admin') {
           fetchAdminMetrics();
@@ -358,7 +359,8 @@ export function App() {
               <button 
                 onClick={() => {
                   setActiveTab('recruiter-pipeline');
-                  if (currentUser.organization) fetchRecruiterApplications(currentUser.organization.id);
+                  const orgId = currentUser.organization?.id || '11111111-1111-1111-1111-111111111111';
+                  fetchRecruiterApplications(orgId);
                 }}
                 className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${activeTab === 'recruiter-pipeline' ? 'text-blue-900 bg-blue-50 font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
               >
@@ -434,7 +436,8 @@ export function App() {
                 <button 
                   onClick={() => { 
                     setActiveTab('recruiter-pipeline'); 
-                    if (currentUser.organization) fetchRecruiterApplications(currentUser.organization.id);
+                    const orgId = currentUser.organization?.id || '11111111-1111-1111-1111-111111111111';
+                    fetchRecruiterApplications(orgId);
                     setMobileMenuOpen(false); 
                   }}
                   className={`text-start px-3 py-2 rounded-lg ${activeTab === 'recruiter-pipeline' ? 'text-blue-900 bg-blue-50 font-semibold' : 'text-slate-600'}`}

@@ -63,6 +63,13 @@ app.MapPost("/api/v1/auth/login", async (AmalDbContext db, LoginRequest request)
         return Results.BadRequest(new { message = "Invalid email or password" });
     }
 
+    // Fallback: If recruiter user doesn't have an organization explicitly linked, link default tech organization
+    var organization = user.Recruiter?.Organization;
+    if (user.Role == UserRole.Recruiter && organization == null)
+    {
+        organization = await db.Organizations.FirstOrDefaultAsync();
+    }
+
     return Results.Ok(new
     {
         user.Id,
@@ -71,7 +78,7 @@ app.MapPost("/api/v1/auth/login", async (AmalDbContext db, LoginRequest request)
         Role = user.Role.ToString(),
         user.Phone,
         Profile = user.Profile,
-        Organization = user.Recruiter?.Organization
+        Organization = organization
     });
 });
 
@@ -203,6 +210,45 @@ app.MapGet("/api/v1/applications/recruiter/{orgId:guid}", async (AmalDbContext d
         .ThenInclude(u => u!.Profile)
         .Where(a => a.Opportunity!.OrganizationId == orgId)
         .OrderByDescending(a => a.SubmittedAt)
+        .Select(a => new
+        {
+            a.Id,
+            a.OpportunityId,
+            a.ApplicantId,
+            a.CoverLetter,
+            Status = a.Status.ToString(),
+            a.RecruiterNotes,
+            a.SubmittedAt,
+            a.RecruiterConfirmedEmployment,
+            a.CandidateConfirmedEmployment,
+            a.EmploymentConfirmedAt,
+            Opportunity = a.Opportunity == null ? null : new
+            {
+                a.Opportunity.Id,
+                a.Opportunity.Title,
+                a.Opportunity.TitleAr,
+                a.Opportunity.Category,
+                a.Opportunity.Location,
+                a.Opportunity.MinSalary,
+                a.Opportunity.MaxSalary,
+                a.Opportunity.Currency
+            },
+            Applicant = a.Applicant == null ? null : new
+            {
+                a.Applicant.Id,
+                a.Applicant.FullName,
+                a.Applicant.Email,
+                a.Applicant.Phone,
+                Profile = a.Applicant.Profile == null ? null : new
+                {
+                    a.Applicant.Profile.Bio,
+                    a.Applicant.Profile.Skills,
+                    a.Applicant.Profile.City,
+                    a.Applicant.Profile.Education,
+                    a.Applicant.Profile.ExperienceYears
+                }
+            }
+        })
         .ToListAsync();
 
     return Results.Ok(apps);
