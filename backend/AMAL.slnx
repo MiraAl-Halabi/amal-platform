@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="AMAL.Api/AMAL.Api.csproj" />
+  <Project Path="AMAL.Application/AMAL.Application.csproj" />
+  <Project Path="AMAL.Domain/AMAL.Domain.csproj" />
+  <Project Path="AMAL.Infrastructure/AMAL.Infrastructure.csproj" />
+</Solution>
