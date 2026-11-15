@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: amal-platform
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
