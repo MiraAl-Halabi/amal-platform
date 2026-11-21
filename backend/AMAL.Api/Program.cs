@@ -91,7 +91,7 @@ app.MapGet("/api/v1/opportunities", async (AmalDbContext db, string? query, stri
     {
         q = q.Where(o => o.Status == parsedStatus);
     }
-    else
+    else if (status != "All")
     {
         q = q.Where(o => o.Status == OpportunityStatus.Approved);
     }
@@ -174,11 +174,14 @@ app.MapPost("/api/v1/applications", async (AmalDbContext db, SubmitApplicationRe
         return Results.BadRequest(new { message = "You have already applied to this opportunity." });
     }
 
+    var candidateProfile = await db.JobSeekerProfiles.FirstOrDefaultAsync(p => p.UserId == req.ApplicantId);
+
     var appEntity = new Application
     {
         OpportunityId = req.OpportunityId,
         ApplicantId = req.ApplicantId,
         CoverLetter = req.CoverLetter,
+        CvFileName = !string.IsNullOrWhiteSpace(req.CvFileName) ? req.CvFileName : candidateProfile?.CvFileName,
         Status = ApplicationStatus.Submitted
     };
 
@@ -216,6 +219,7 @@ app.MapGet("/api/v1/applications/recruiter/{orgId:guid}", async (AmalDbContext d
             a.OpportunityId,
             a.ApplicantId,
             a.CoverLetter,
+            a.CvFileName,
             Status = a.Status.ToString(),
             a.RecruiterNotes,
             a.SubmittedAt,
@@ -245,7 +249,9 @@ app.MapGet("/api/v1/applications/recruiter/{orgId:guid}", async (AmalDbContext d
                     a.Applicant.Profile.Skills,
                     a.Applicant.Profile.City,
                     a.Applicant.Profile.Education,
-                    a.Applicant.Profile.ExperienceYears
+                    a.Applicant.Profile.ExperienceYears,
+                    a.Applicant.Profile.CvFileName,
+                    a.Applicant.Profile.PortfolioUrl
                 }
             }
         })
@@ -356,6 +362,7 @@ app.MapGet("/api/v1/profile/seeker/{userId:guid}", async (AmalDbContext db, Guid
         profile.ExperienceYears,
         profile.Languages,
         profile.PortfolioUrl,
+        profile.CvFileName,
         profile.ProfileCompletionPercentage,
         FullName = profile.User?.FullName,
         Email = profile.User?.Email,
@@ -399,9 +406,10 @@ app.MapPut("/api/v1/profile/seeker/{userId:guid}", async (AmalDbContext db, Guid
     int score = 30; // base score for registered user
     if (!string.IsNullOrWhiteSpace(profile.ProfessionalHeadline)) score += 15;
     if (!string.IsNullOrWhiteSpace(profile.Bio)) score += 15;
-    if (!string.IsNullOrWhiteSpace(profile.Skills)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Skills)) score += 10;
     if (!string.IsNullOrWhiteSpace(profile.Education)) score += 10;
-    if (!string.IsNullOrWhiteSpace(profile.PortfolioUrl)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.PortfolioUrl)) score += 10;
+    if (!string.IsNullOrWhiteSpace(profile.CvFileName)) score += 10;
     profile.ProfileCompletionPercentage = Math.Min(score, 100);
 
     await db.SaveChangesAsync();
@@ -421,11 +429,108 @@ app.MapPut("/api/v1/profile/seeker/{userId:guid}", async (AmalDbContext db, Guid
         profile.ExperienceYears,
         profile.Languages,
         profile.PortfolioUrl,
+        profile.CvFileName,
         profile.ProfileCompletionPercentage,
         FullName = profile.User?.FullName,
         Email = profile.User?.Email,
         Phone = profile.User?.Phone
     });
+});
+
+// Job Seeker: Upload CV / Resume
+app.MapPost("/api/v1/profile/seeker/{userId:guid}/cv", async (AmalDbContext db, Guid userId, HttpRequest req) =>
+{
+    if (!req.HasFormContentType || !req.Form.Files.Any())
+    {
+        return Results.BadRequest(new { message = "No file uploaded" });
+    }
+
+    var file = req.Form.Files[0];
+    if (file.Length == 0)
+    {
+        return Results.BadRequest(new { message = "Empty file uploaded" });
+    }
+
+    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+    var allowedExtensions = new[] { ".pdf", ".docx", ".doc" };
+    if (!allowedExtensions.Contains(ext))
+    {
+        return Results.BadRequest(new { message = "Only PDF, DOC, or DOCX formats are allowed." });
+    }
+
+    if (file.Length > 10 * 1024 * 1024)
+    {
+        return Results.BadRequest(new { message = "File size cannot exceed 10MB." });
+    }
+
+    var profile = await db.JobSeekerProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+    if (profile == null)
+    {
+        return Results.NotFound(new { message = "Candidate profile not found." });
+    }
+
+    var uploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads", "cvs");
+    if (!Directory.Exists(uploadDir))
+    {
+        Directory.CreateDirectory(uploadDir);
+    }
+
+    var safeBase = Path.GetFileNameWithoutExtension(file.FileName);
+    safeBase = string.Join("_", safeBase.Split(Path.GetInvalidFileNameChars()));
+    var storedFileName = $"{userId.ToString().Substring(0, 8)}_{DateTime.UtcNow.Ticks}_{safeBase}{ext}";
+    var targetPath = Path.Combine(uploadDir, storedFileName);
+
+    using (var stream = new FileStream(targetPath, FileMode.Create))
+    {
+        await file.CopyToAsync(stream);
+    }
+
+    profile.CvFileName = storedFileName;
+
+    // Recalculate completion score
+    int score = 30;
+    if (!string.IsNullOrWhiteSpace(profile.ProfessionalHeadline)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Bio)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Skills)) score += 10;
+    if (!string.IsNullOrWhiteSpace(profile.Education)) score += 10;
+    if (!string.IsNullOrWhiteSpace(profile.PortfolioUrl)) score += 10;
+    if (!string.IsNullOrWhiteSpace(profile.CvFileName)) score += 10;
+    profile.ProfileCompletionPercentage = Math.Min(score, 100);
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        message = "CV uploaded successfully",
+        fileName = storedFileName,
+        originalName = file.FileName,
+        profileCompletionPercentage = profile.ProfileCompletionPercentage,
+        downloadUrl = $"/api/v1/files/cv/{storedFileName}"
+    });
+});
+
+// File Serving: Serve / Download Candidate CV
+app.MapGet("/api/v1/files/cv/{fileName}", (string fileName) =>
+{
+    var cleanName = Path.GetFileName(fileName);
+    var uploadDir = Path.Combine(Directory.GetCurrentDirectory(), "uploads", "cvs");
+    var filePath = Path.Combine(uploadDir, cleanName);
+
+    if (!File.Exists(filePath))
+    {
+        return Results.NotFound(new { message = "Requested CV file was not found." });
+    }
+
+    var ext = Path.GetExtension(cleanName).ToLowerInvariant();
+    var contentType = ext switch
+    {
+        ".pdf" => "application/pdf",
+        ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc" => "application/msword",
+        _ => "application/octet-stream"
+    };
+
+    return Results.File(filePath, contentType, fileDownloadName: cleanName, enableRangeProcessing: true);
 });
 
 app.UseDefaultFiles();
@@ -455,7 +560,7 @@ public record CreateOpportunityRequest(
     string Requirements
 );
 public record UpdateStatusRequest(OpportunityStatus Status);
-public record SubmitApplicationRequest(Guid OpportunityId, Guid ApplicantId, string CoverLetter);
+public record SubmitApplicationRequest(Guid OpportunityId, Guid ApplicantId, string CoverLetter, string? CvFileName = null);
 public record UpdateAppStatusRequest(ApplicationStatus Status, string? Notes);
 public record ConfirmEmploymentRequest(UserRole Role, bool Confirmed);
 public record UpdateProfileRequest(

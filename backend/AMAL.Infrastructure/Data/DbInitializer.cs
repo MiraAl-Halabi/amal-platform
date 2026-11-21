@@ -10,6 +10,15 @@ public static class DbInitializer
     {
         context.Database.EnsureCreated();
 
+        try
+        {
+            context.Database.ExecuteSqlRaw("ALTER TABLE Applications ADD COLUMN CvFileName TEXT;");
+        }
+        catch
+        {
+            // Column already exists or table freshly created
+        }
+
         if (context.Users.Any())
         {
             return; // DB already seeded

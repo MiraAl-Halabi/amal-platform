@@ -34,7 +34,9 @@ import {
   XCircle,
   Phone,
   Mail,
-  Plus
+  Plus,
+  Upload,
+  Download
 } from 'lucide-react';
 
 interface Organization {
@@ -81,6 +83,7 @@ interface CandidateApplication {
   opportunityId: string;
   applicantId: string;
   coverLetter: string;
+  cvFileName?: string;
   status: 'Submitted' | 'UnderReview' | 'Shortlisted' | 'Interview' | 'Accepted' | 'Rejected';
   recruiterNotes?: string;
   submittedAt: string;
@@ -99,6 +102,9 @@ interface CandidateApplication {
       yearsOfExperience?: number;
       education?: string;
       residenceCity?: string;
+      city?: string;
+      cvFileName?: string;
+      portfolioUrl?: string;
       isDisplaced?: boolean;
     }
   };
@@ -141,6 +147,7 @@ export function App() {
   // Profile Builder State
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [cvUploading, setCvUploading] = useState(false);
   const [profileData, setProfileData] = useState({
     fullName: '',
     phone: '',
@@ -153,8 +160,13 @@ export function App() {
     experienceYears: '3-5 years',
     languages: 'Arabic (Native), English (Fluent)',
     portfolioUrl: '',
+    cvFileName: '',
     profileCompletionPercentage: 85
   });
+
+  // Admin Moderation State
+  const [adminOpportunities, setAdminOpportunities] = useState<Opportunity[]>([]);
+  const [adminFilter, setAdminFilter] = useState<'All' | 'PendingReview' | 'Approved' | 'Rejected'>('All');
   const [jobForm, setJobForm] = useState({
     title: '',
     titleAr: '',
@@ -221,6 +233,7 @@ export function App() {
           setActiveTab('recruiter-pipeline');
         } else if (user.role === 'Admin') {
           fetchAdminMetrics();
+          fetchAdminOpportunities();
           setActiveTab('dashboard');
         }
       }
@@ -260,6 +273,7 @@ export function App() {
           experienceYears: data.experienceYears || '3-5 years',
           languages: data.languages || 'Arabic (Native), English (Fluent)',
           portfolioUrl: data.portfolioUrl || '',
+          cvFileName: data.cvFileName || '',
           profileCompletionPercentage: data.profileCompletionPercentage || 85
         });
       }
@@ -426,6 +440,60 @@ export function App() {
     }
   };
 
+  const handleCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    const allowed = ['.pdf', '.docx', '.doc'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowed.includes(ext)) {
+      setStatusMessage({ 
+        type: 'error', 
+        text: isRTL ? 'يرجى رفع ملف بصيغة PDF أو DOCX فقط' : 'Please upload a PDF or DOCX file only.' 
+      });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setStatusMessage({ 
+        type: 'error', 
+        text: isRTL ? 'الحد الأقصى لحجم الملف هو 10 ميجابايت' : 'File size cannot exceed 10MB.' 
+      });
+      return;
+    }
+
+    try {
+      setCvUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch(`/api/v1/profile/seeker/${currentUser.id}/cv`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProfileData(prev => ({
+          ...prev,
+          cvFileName: data.fileName,
+          profileCompletionPercentage: data.profileCompletionPercentage
+        }));
+        setStatusMessage({ 
+          type: 'success', 
+          text: isRTL ? 'تم رفع وحفظ السيرة الذاتية بنجاح!' : 'CV uploaded successfully!' 
+        });
+      } else {
+        const err = await res.json();
+        setStatusMessage({ type: 'error', text: err.message || 'Error uploading CV' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: isRTL ? 'فشل رفع الملف، يرجى المحاولة لاحقاً' : 'Failed to upload CV' });
+    } finally {
+      setCvUploading(false);
+    }
+  };
+
   const fetchAdminMetrics = async () => {
     try {
       const res = await fetch('/api/v1/admin/metrics');
@@ -435,6 +503,40 @@ export function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchAdminOpportunities = async () => {
+    try {
+      const res = await fetch('/api/v1/opportunities?status=All');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminOpportunities(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleModerateOpportunity = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/v1/admin/opportunities/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        setStatusMessage({ 
+          type: 'success', 
+          text: isRTL 
+            ? `تم تحديث حالة الفرصة إلى: ${newStatus === 'Approved' ? 'معتمدة ومتاحة' : 'مرفوضة'}` 
+            : `Opportunity status updated to ${newStatus}` 
+        });
+        fetchAdminOpportunities();
+        fetchAdminMetrics();
+      }
+    } catch (e) {
+      setStatusMessage({ type: 'error', text: 'Error moderating opportunity' });
     }
   };
 
@@ -450,7 +552,8 @@ export function App() {
         body: JSON.stringify({
           opportunityId: oppId,
           applicantId: currentUser.id,
-          coverLetter: coverLetter || "أرغب بشدة في المساهمة بخبرتي ومهاراتي في هذا المنصب من غزة."
+          coverLetter: coverLetter || "أرغب بشدة في المساهمة بخبرتي ومهاراتي في هذا المنصب من غزة.",
+          cvFileName: profileData.cvFileName || undefined
         })
       });
       if (res.ok) {
@@ -581,7 +684,7 @@ export function App() {
 
             {currentUser?.role === 'Admin' && (
               <button 
-                onClick={() => { setActiveTab('dashboard'); fetchAdminMetrics(); }}
+                onClick={() => { setActiveTab('dashboard'); fetchAdminMetrics(); fetchAdminOpportunities(); }}
                 className={`px-4 py-2 rounded-lg transition-all ${
                   activeTab === 'dashboard' 
                     ? 'bg-white text-blue-900 shadow-xs font-bold' 
@@ -709,7 +812,7 @@ export function App() {
 
               {currentUser?.role === 'Admin' && (
                 <button 
-                  onClick={() => { setActiveTab('dashboard'); fetchAdminMetrics(); setMobileMenuOpen(false); }}
+                  onClick={() => { setActiveTab('dashboard'); fetchAdminMetrics(); fetchAdminOpportunities(); setMobileMenuOpen(false); }}
                   className={`text-start px-3.5 py-2.5 rounded-xl transition ${activeTab === 'dashboard' ? 'text-blue-900 bg-blue-50 font-bold' : 'text-slate-600'}`}
                 >
                   {isRTL ? 'لوحة الإشراف' : 'Admin Analytics'}
@@ -1374,6 +1477,83 @@ export function App() {
                     </div>
                   </div>
 
+                  {/* CV / Resume Upload Section */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <h3 className="text-base font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span>{isRTL ? 'السيرة الذاتية المرفقة (CV / Resume)' : 'Resume / CV Attachment'}</span>
+                    </h3>
+
+                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-5 sm:p-6 text-center">
+                      {profileData.cvFileName ? (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-emerald-200 shadow-2xs">
+                          <div className="flex items-center gap-3 text-start">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                              <CheckCircle2 className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs sm:text-sm font-extrabold text-slate-900">{isRTL ? 'تم حفظ السيرة الذاتية بنجاح' : 'CV Uploaded & Attached'}</span>
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">{isRTL ? 'معتمدة' : 'Active'}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 font-mono truncate max-w-[220px] sm:max-w-[360px] mt-0.5">
+                                {profileData.cvFileName}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <a
+                              href={`/api/v1/files/cv/${profileData.cvFileName}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>{isRTL ? 'تحميل وعرض' : 'Download'}</span>
+                            </a>
+
+                            <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs shadow-blue-600/20">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{cvUploading ? (isRTL ? 'جارٍ الرفع...' : 'Uploading...') : (isRTL ? 'استبدال الملف' : 'Replace File')}</span>
+                              <input 
+                                type="file" 
+                                accept=".pdf,.docx,.doc" 
+                                onChange={handleCvUpload} 
+                                disabled={cvUploading}
+                                className="hidden" 
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-2">
+                          <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                          <p className="text-xs sm:text-sm font-bold text-slate-700">
+                            {isRTL ? 'ارفع سيرتك الذاتية بتنسيق PDF أو DOCX' : 'Upload your CV in PDF or DOCX format'}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1 mb-4 max-w-md mx-auto">
+                            {isRTL 
+                              ? 'الحد الأقصى للحجم 10 ميجابايت. إرفاق السيرة الذاتية يرفع نسبة اكتمال ملفك ويمنحك أولوية في الفرز.' 
+                              : 'Maximum file size 10MB. Attaching your CV increases profile strength and shortlist priority.'}
+                          </p>
+
+                          <label className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-md shadow-blue-600/20">
+                            <Upload className="w-4 h-4" />
+                            <span>{cvUploading ? (isRTL ? 'جارٍ رفع الملف...' : 'Uploading...') : (isRTL ? 'اختيار ورفع ملف السيرة الذاتية' : 'Browse & Upload CV')}</span>
+                            <input 
+                              type="file" 
+                              accept=".pdf,.docx,.doc" 
+                              onChange={handleCvUpload} 
+                              disabled={cvUploading}
+                              className="hidden" 
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Save Button */}
                   <div className="pt-4 border-t border-slate-100 flex justify-end">
                     <button
@@ -1434,6 +1614,104 @@ export function App() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Moderation Queue Section */}
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                    {isRTL ? 'إدارة واعتماد فرص العمل (Moderation Queue)' : 'Opportunity Moderation & Review'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+                    {isRTL 
+                      ? 'مراجعة الفرص المنشورة من قبل الشركات والتحقق من مصداقيتها ومطابقتها للشروط قبل عرضها لباحثي العمل في غزة.' 
+                      : 'Review and approve/reject posted opportunities before publishing to Gaza job seekers.'}
+                  </p>
+                </div>
+
+                {/* Filter tabs */}
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl self-start sm:self-auto text-xs font-bold">
+                  {(['All', 'PendingReview', 'Approved', 'Rejected'] as const).map(flt => (
+                    <button
+                      key={flt}
+                      onClick={() => setAdminFilter(flt)}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        adminFilter === flt ? 'bg-white text-blue-900 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {flt === 'All' ? (isRTL ? 'الكل' : 'All') :
+                       flt === 'PendingReview' ? (isRTL ? 'قيد المراجعة' : 'Pending') :
+                       flt === 'Approved' ? (isRTL ? 'معتمدة' : 'Approved') :
+                       (isRTL ? 'مرفوضة' : 'Rejected')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Opportunities List */}
+              <div className="divide-y divide-slate-100 mt-4">
+                {adminOpportunities
+                  .filter(o => adminFilter === 'All' ? true : o.status === adminFilter)
+                  .map(opp => (
+                    <div key={opp.id} className="py-4 flex flex-col md:flex-row justify-between md:items-center gap-4 hover:bg-slate-50/50 p-3 rounded-2xl transition">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-base text-slate-900">
+                            {isRTL ? (opp.titleAr || opp.title) : opp.title}
+                          </span>
+                          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                            opp.status === 'Approved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                            opp.status === 'PendingReview' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                            'bg-rose-50 text-rose-800 border-rose-200'
+                          }`}>
+                            {opp.status === 'Approved' ? (isRTL ? 'معتمدة ومتاحة' : 'Approved') :
+                             opp.status === 'PendingReview' ? (isRTL ? 'بانتظار الموافقة' : 'Pending Review') :
+                             (isRTL ? 'مرفوضة' : 'Rejected')}
+                          </span>
+                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">
+                            {opp.category}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {opp.organization?.name} • {opp.arrangement} • ${opp.minSalary}-${opp.maxSalary} {opp.currency}
+                        </p>
+                        <p className="text-xs text-slate-600 line-clamp-1 max-w-xl">
+                          {opp.description}
+                        </p>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {opp.status !== 'Approved' && (
+                          <button
+                            onClick={() => handleModerateOpportunity(opp.id, 'Approved')}
+                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{isRTL ? 'موافقة واعتماد' : 'Approve'}</span>
+                          </button>
+                        )}
+                        {opp.status !== 'Rejected' && (
+                          <button
+                            onClick={() => handleModerateOpportunity(opp.id, 'Rejected')}
+                            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>{isRTL ? 'رفض' : 'Reject'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                {adminOpportunities.filter(o => adminFilter === 'All' ? true : o.status === adminFilter).length === 0 && (
+                  <div className="text-center py-12 text-slate-400">
+                    <ShieldCheck className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p className="text-sm font-semibold">{isRTL ? 'لا توجد فرص مطابقة لهذا التصنيف.' : 'No opportunities found for this filter.'}</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1511,6 +1789,41 @@ export function App() {
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* Candidate CV Attachment */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-blue-100/70 border border-blue-200 flex items-center justify-center text-blue-700 shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-500 block uppercase tracking-wider">
+                    {isRTL ? 'السيرة الذاتية (CV / Resume)' : 'Attached Candidate CV'}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-900 truncate block">
+                    {selectedApplicantModal.cvFileName || selectedApplicantModal.applicant?.profile?.cvFileName 
+                      ? (selectedApplicantModal.cvFileName || selectedApplicantModal.applicant?.profile?.cvFileName)
+                      : (isRTL ? 'لم يتم إرفاق ملف CV بعد' : 'No CV uploaded yet')}
+                  </span>
+                </div>
+              </div>
+
+              {(selectedApplicantModal.cvFileName || selectedApplicantModal.applicant?.profile?.cvFileName) ? (
+                <a
+                  href={`/api/v1/files/cv/${selectedApplicantModal.cvFileName || selectedApplicantModal.applicant?.profile?.cvFileName}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{isRTL ? 'تحميل وعرض السيرة' : 'Download CV'}</span>
+                </a>
+              ) : (
+                <span className="text-xs text-slate-400 font-semibold italic px-2">
+                  {isRTL ? 'الاعتماد على الملف المهني الموحد' : 'Using verified profile summary'}
+                </span>
               )}
             </div>
 
@@ -1830,12 +2143,41 @@ export function App() {
                 {isRTL ? 'رسالة التقديم والملاحظات (Cover Letter):' : 'Cover Letter / Introduction:'}
               </label>
               <textarea
-                rows={5}
+                rows={4}
                 value={coverLetter}
                 onChange={(e) => setCoverLetter(e.target.value)}
                 placeholder={isRTL ? "عرّف بنفسك ومهاراتك وكيف ستساهم في هذه الفرصة من غزة..." : "Introduce yourself and explain how you fit this opportunity from Gaza..."}
                 className="w-full text-xs sm:text-sm p-4 rounded-2xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
               />
+            </div>
+
+            {/* Attached CV status in Apply Modal */}
+            <div className="mb-5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText className="w-5 h-5 text-blue-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-700 block">
+                      {isRTL ? 'السيرة الذاتية المرفقة بالطلب:' : 'Resume / CV Attached:'}
+                    </span>
+                    <span className="text-xs font-mono text-slate-500 truncate max-w-[180px] sm:max-w-[280px] block">
+                      {profileData.cvFileName || (isRTL ? 'لم يتم رفع سيرة ذاتية بعد (اختياري)' : 'No CV uploaded yet (optional)')}
+                    </span>
+                  </div>
+                </div>
+
+                <label className="px-3 py-1.5 bg-white border border-slate-200 hover:border-blue-400 text-blue-900 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{cvUploading ? (isRTL ? 'جارٍ الرفع...' : 'Uploading...') : (profileData.cvFileName ? (isRTL ? 'تغيير' : 'Change') : (isRTL ? 'إرفاق CV' : 'Attach CV'))}</span>
+                  <input 
+                    type="file" 
+                    accept=".pdf,.docx,.doc" 
+                    onChange={handleCvUpload} 
+                    disabled={cvUploading}
+                    className="hidden" 
+                  />
+                </label>
+              </div>
             </div>
 
             <div className="flex gap-3">

@@ -102,6 +102,7 @@ public class Application
 
     public string CoverLetter { get; set; } = string.Empty;
     public string CustomAnswers { get; set; } = string.Empty;
+    public string? CvFileName { get; set; }
     public ApplicationStatus Status { get; set; } = ApplicationStatus.Submitted;
     public string? RecruiterNotes { get; set; }
     public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
