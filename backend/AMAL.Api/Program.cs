@@ -315,6 +315,119 @@ app.MapGet("/api/v1/admin/metrics", async (AmalDbContext db) =>
     });
 });
 
+// Job Seeker: Get Profile
+app.MapGet("/api/v1/profile/seeker/{userId:guid}", async (AmalDbContext db, Guid userId) =>
+{
+    var profile = await db.JobSeekerProfiles
+        .Include(p => p.User)
+        .FirstOrDefaultAsync(p => p.UserId == userId);
+
+    if (profile == null)
+    {
+        var user = await db.Users.FindAsync(userId);
+        if (user == null) return Results.NotFound();
+
+        profile = new JobSeekerProfile
+        {
+            UserId = userId,
+            ProfessionalHeadline = "Software Developer from Gaza",
+            Bio = "Skilled technology professional based in Gaza, seeking remote opportunities.",
+            City = "Gaza City",
+            Skills = "React, C#, TypeScript",
+            Education = "Bachelor's Degree",
+            ExperienceYears = "3-5 years"
+        };
+        db.JobSeekerProfiles.Add(profile);
+        await db.SaveChangesAsync();
+    }
+
+    return Results.Ok(new
+    {
+        profile.Id,
+        profile.UserId,
+        profile.ProfessionalHeadline,
+        profile.Bio,
+        profile.Country,
+        profile.City,
+        profile.ProfessionalStatus,
+        profile.MainCategory,
+        profile.Skills,
+        profile.Education,
+        profile.ExperienceYears,
+        profile.Languages,
+        profile.PortfolioUrl,
+        profile.ProfileCompletionPercentage,
+        FullName = profile.User?.FullName,
+        Email = profile.User?.Email,
+        Phone = profile.User?.Phone
+    });
+});
+
+// Job Seeker: Update Profile
+app.MapPut("/api/v1/profile/seeker/{userId:guid}", async (AmalDbContext db, Guid userId, UpdateProfileRequest req) =>
+{
+    var profile = await db.JobSeekerProfiles
+        .Include(p => p.User)
+        .FirstOrDefaultAsync(p => p.UserId == userId);
+
+    if (profile == null)
+    {
+        profile = new JobSeekerProfile { UserId = userId };
+        db.JobSeekerProfiles.Add(profile);
+    }
+
+    profile.ProfessionalHeadline = req.ProfessionalHeadline ?? profile.ProfessionalHeadline;
+    profile.Bio = req.Bio ?? profile.Bio;
+    profile.City = req.City ?? profile.City;
+    profile.Skills = req.Skills ?? profile.Skills;
+    profile.Education = req.Education ?? profile.Education;
+    profile.ExperienceYears = req.ExperienceYears ?? profile.ExperienceYears;
+    profile.Languages = req.Languages ?? profile.Languages;
+    profile.PortfolioUrl = req.PortfolioUrl ?? profile.PortfolioUrl;
+    profile.MainCategory = req.MainCategory ?? profile.MainCategory;
+
+    if (profile.User != null && !string.IsNullOrWhiteSpace(req.FullName))
+    {
+        profile.User.FullName = req.FullName;
+    }
+    if (profile.User != null && !string.IsNullOrWhiteSpace(req.Phone))
+    {
+        profile.User.Phone = req.Phone;
+    }
+
+    // Calculate dynamic completion score
+    int score = 30; // base score for registered user
+    if (!string.IsNullOrWhiteSpace(profile.ProfessionalHeadline)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Bio)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Skills)) score += 15;
+    if (!string.IsNullOrWhiteSpace(profile.Education)) score += 10;
+    if (!string.IsNullOrWhiteSpace(profile.PortfolioUrl)) score += 15;
+    profile.ProfileCompletionPercentage = Math.Min(score, 100);
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        profile.Id,
+        profile.UserId,
+        profile.ProfessionalHeadline,
+        profile.Bio,
+        profile.Country,
+        profile.City,
+        profile.ProfessionalStatus,
+        profile.MainCategory,
+        profile.Skills,
+        profile.Education,
+        profile.ExperienceYears,
+        profile.Languages,
+        profile.PortfolioUrl,
+        profile.ProfileCompletionPercentage,
+        FullName = profile.User?.FullName,
+        Email = profile.User?.Email,
+        Phone = profile.User?.Phone
+    });
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -345,3 +458,16 @@ public record UpdateStatusRequest(OpportunityStatus Status);
 public record SubmitApplicationRequest(Guid OpportunityId, Guid ApplicantId, string CoverLetter);
 public record UpdateAppStatusRequest(ApplicationStatus Status, string? Notes);
 public record ConfirmEmploymentRequest(UserRole Role, bool Confirmed);
+public record UpdateProfileRequest(
+    string? FullName,
+    string? Phone,
+    string? ProfessionalHeadline,
+    string? Bio,
+    string? City,
+    string? MainCategory,
+    string? Skills,
+    string? Education,
+    string? ExperienceYears,
+    string? Languages,
+    string? PortfolioUrl
+);

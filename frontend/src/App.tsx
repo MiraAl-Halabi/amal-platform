@@ -123,7 +123,7 @@ export function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [activeTab, setActiveTab] = useState<'browse' | 'dashboard' | 'applications' | 'recruiter-pipeline'>('browse');
+  const [activeTab, setActiveTab] = useState<'browse' | 'dashboard' | 'applications' | 'recruiter-pipeline' | 'profile'>('browse');
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [coverLetter, setCoverLetter] = useState('');
@@ -137,6 +137,24 @@ export function App() {
   // New Job Creation Modal State
   const [showJobModal, setShowJobModal] = useState(false);
   const [jobFormSubmitting, setJobFormSubmitting] = useState(false);
+
+  // Profile Builder State
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileData, setProfileData] = useState({
+    fullName: '',
+    phone: '',
+    professionalHeadline: '',
+    bio: '',
+    city: 'Gaza City',
+    mainCategory: 'Software Engineering',
+    skills: '',
+    education: '',
+    experienceYears: '3-5 years',
+    languages: 'Arabic (Native), English (Fluent)',
+    portfolioUrl: '',
+    profileCompletionPercentage: 85
+  });
   const [jobForm, setJobForm] = useState({
     title: '',
     titleAr: '',
@@ -195,6 +213,7 @@ export function App() {
 
         if (user.role === 'JobSeeker') {
           fetchUserApplications(user.id);
+          fetchUserProfile(user.id);
           setActiveTab('browse');
         } else if (user.role === 'Recruiter') {
           const orgId = user.organization?.id || '11111111-1111-1111-1111-111111111111';
@@ -220,6 +239,65 @@ export function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      setProfileLoading(true);
+      const res = await fetch(`/api/v1/profile/seeker/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfileData({
+          fullName: data.fullName || '',
+          phone: data.phone || '',
+          professionalHeadline: data.professionalHeadline || '',
+          bio: data.bio || '',
+          city: data.city || 'Gaza City',
+          mainCategory: data.mainCategory || 'Software Engineering',
+          skills: data.skills || '',
+          education: data.education || '',
+          experienceYears: data.experienceYears || '3-5 years',
+          languages: data.languages || 'Arabic (Native), English (Fluent)',
+          portfolioUrl: data.portfolioUrl || '',
+          profileCompletionPercentage: data.profileCompletionPercentage || 85
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching profile:", e);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    try {
+      setProfileSaving(true);
+      const res = await fetch(`/api/v1/profile/seeker/${currentUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setProfileData(prev => ({
+          ...prev,
+          profileCompletionPercentage: updated.profileCompletionPercentage
+        }));
+        setCurrentUser(prev => prev ? { ...prev, fullName: profileData.fullName, phone: profileData.phone } : null);
+        setStatusMessage({
+          type: 'success',
+          text: isRTL ? 'تم حفظ وتحديث ملفك المهني بنجاح!' : 'Profile updated and saved successfully!'
+        });
+      } else {
+        setStatusMessage({ type: 'error', text: 'Failed to update profile' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: 'Network error saving profile' });
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -455,16 +533,32 @@ export function App() {
             </button>
 
             {currentUser?.role === 'JobSeeker' && (
-              <button 
-                onClick={() => setActiveTab('applications')}
-                className={`px-4 py-2 rounded-lg transition-all ${
-                  activeTab === 'applications' 
-                    ? 'bg-white text-blue-900 shadow-xs font-bold' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                {isRTL ? 'طلباتي ومتابعة التوظيف' : 'My Applications'}
-              </button>
+              <>
+                <button 
+                  onClick={() => setActiveTab('applications')}
+                  className={`px-4 py-2 rounded-lg transition-all ${
+                    activeTab === 'applications' 
+                      ? 'bg-white text-blue-900 shadow-xs font-bold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  {isRTL ? 'طلباتي ومتابعة التوظيف' : 'My Applications'}
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab('profile');
+                    if (currentUser) fetchUserProfile(currentUser.id);
+                  }}
+                  className={`px-4 py-2 rounded-lg transition-all flex items-center gap-1.5 ${
+                    activeTab === 'profile' 
+                      ? 'bg-white text-blue-900 shadow-xs font-bold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span>{isRTL ? 'ملفي المهني (غزة)' : 'My Profile'}</span>
+                </button>
+              </>
             )}
 
             {currentUser?.role === 'Recruiter' && (
@@ -579,12 +673,24 @@ export function App() {
               </button>
               
               {currentUser?.role === 'JobSeeker' && (
-                <button 
-                  onClick={() => { setActiveTab('applications'); setMobileMenuOpen(false); }}
-                  className={`text-start px-3.5 py-2.5 rounded-xl transition ${activeTab === 'applications' ? 'text-blue-900 bg-blue-50 font-bold' : 'text-slate-600'}`}
-                >
-                  {isRTL ? 'طلباتي ومتابعة التوظيف' : 'My Applications'}
-                </button>
+                <>
+                  <button 
+                    onClick={() => { setActiveTab('applications'); setMobileMenuOpen(false); }}
+                    className={`text-start px-3.5 py-2.5 rounded-xl transition ${activeTab === 'applications' ? 'text-blue-900 bg-blue-50 font-bold' : 'text-slate-600'}`}
+                  >
+                    {isRTL ? 'طلباتي ومتابعة التوظيف' : 'My Applications'}
+                  </button>
+                  <button 
+                    onClick={() => { 
+                      setActiveTab('profile'); 
+                      if (currentUser) fetchUserProfile(currentUser.id);
+                      setMobileMenuOpen(false); 
+                    }}
+                    className={`text-start px-3.5 py-2.5 rounded-xl transition ${activeTab === 'profile' ? 'text-blue-900 bg-blue-50 font-bold' : 'text-slate-600'}`}
+                  >
+                    {isRTL ? 'ملفي المهني (غزة)' : 'My Profile'}
+                  </button>
+                </>
               )}
 
               {currentUser?.role === 'Recruiter' && (
@@ -1050,7 +1156,243 @@ export function App() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 4: ADMIN ANALYTICS DASHBOARD                          */}
+        {/* TAB 4: JOB SEEKER GAZA PROFILE BUILDER & EDITOR           */}
+        {/* ========================================================= */}
+        {activeTab === 'profile' && currentUser?.role === 'JobSeeker' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                <div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-bold mb-2">
+                    <User className="w-3.5 h-3.5" />
+                    <span>{isRTL ? 'الملف المهني الموحد لكفاءات قطاع غزة' : 'Gaza Talent Verified Profile'}</span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    {isRTL ? 'إدارة وتحديث الملف المهني' : 'Professional Profile Builder'}
+                  </h2>
+                  <p className="text-slate-500 text-xs sm:text-sm font-medium mt-1">
+                    {isRTL 
+                      ? 'هذا الملف يظهر للشركات والمؤسسات الدولية عند تقديمك على الوظائف.' 
+                      : 'This profile is reviewed by international recruiters when you apply for opportunities.'}
+                  </p>
+                </div>
+
+                {/* Profile Completion Indicator */}
+                <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl shrink-0 min-w-[200px]">
+                  <div className="flex justify-between items-center text-xs font-bold mb-1.5">
+                    <span className="text-slate-500">{isRTL ? 'نسبة اكتمال الملف:' : 'Profile Strength:'}</span>
+                    <span className="text-blue-700 font-black">{profileData.profileCompletionPercentage}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" 
+                      style={{ width: `${profileData.profileCompletionPercentage}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-medium mt-1 block">
+                    {profileData.profileCompletionPercentage >= 80 ? (isRTL ? 'ملف مهني ممتاز جاهز للتقديم' : 'Strong Profile') : (isRTL ? 'أكمل المهارات وروابط الأعمال' : 'Add skills & portfolio')}
+                  </span>
+                </div>
+              </div>
+
+              {profileLoading ? (
+                <div className="text-center py-16 text-slate-400">
+                  <Clock className="w-9 h-9 animate-spin mx-auto mb-3 text-blue-600" />
+                  <span className="text-sm font-semibold">{isRTL ? 'جارٍ تحميل بيانات الملف...' : 'Loading profile data...'}</span>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveProfile} className="pt-6 space-y-6">
+                  {/* Basic Personal Info */}
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-blue-600" />
+                      <span>{isRTL ? 'البيانات الشخصية والاتصال' : 'Basic & Contact Information'}</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'الاسم الكامل *' : 'Full Name *'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={profileData.fullName}
+                          onChange={(e) => setProfileData({ ...profileData, fullName: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'رقم الهاتف / واتساب' : 'Phone / WhatsApp'}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileData.phone}
+                          onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'المدينة / المنطقة داخل غزة' : 'City / Location in Gaza'}
+                        </label>
+                        <select
+                          value={profileData.city}
+                          onChange={(e) => setProfileData({ ...profileData, city: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                        >
+                          <option value="Gaza City">مدينة غزة (Gaza City)</option>
+                          <option value="North Gaza">شمال غزة (North Gaza)</option>
+                          <option value="Deir al-Balah">دير البلح (Deir al-Balah)</option>
+                          <option value="Khan Younis">خان يونس (Khan Younis)</option>
+                          <option value="Rafah">رفح (Rafah)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Professional Background */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <h3 className="text-base font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-blue-600" />
+                      <span>{isRTL ? 'الخلفية المهنية والتخصص' : 'Professional Background'}</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'العنوان المهني (Headline)' : 'Professional Headline'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="مثال: Senior Full-Stack Engineer (.NET & React)"
+                          value={profileData.professionalHeadline}
+                          onChange={(e) => setProfileData({ ...profileData, professionalHeadline: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'المجال التخصصي' : 'Primary Category'}
+                        </label>
+                        <select
+                          value={profileData.mainCategory}
+                          onChange={(e) => setProfileData({ ...profileData, mainCategory: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                        >
+                          <option value="Software Engineering">Software Engineering</option>
+                          <option value="Design & Creative">Design & Creative</option>
+                          <option value="Medicine & Healthcare">Medicine & Healthcare</option>
+                          <option value="Education & Translation">Education & Translation</option>
+                          <option value="Marketing & Sales">Marketing & Sales</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'المهارات التقنية (مفصولة بفاصلة)' : 'Technical Skills (comma-separated)'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="C#, ASP.NET Core, React, TypeScript, PostgreSQL, Docker"
+                          value={profileData.skills}
+                          onChange={(e) => setProfileData({ ...profileData, skills: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'سنوات الخبرة' : 'Years of Experience'}
+                        </label>
+                        <select
+                          value={profileData.experienceYears}
+                          onChange={(e) => setProfileData({ ...profileData, experienceYears: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                        >
+                          <option value="1-2 years">1-2 years (مبتدئ / جونيور)</option>
+                          <option value="3-5 years">3-5 years (متوسط / ميد-ليفل)</option>
+                          <option value="5+ years">5+ years (سينيور / خبير)</option>
+                          <option value="8+ years">8+ years (ليد / استشاري)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bio & Education */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <h3 className="text-base font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                      <GraduationCap className="w-4 h-4 text-blue-600" />
+                      <span>{isRTL ? 'النبذة التعريفية والتعليم' : 'Bio & Education'}</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'المؤهل الأكاديمي والجامعة' : 'Education & Degree'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="B.Sc. Software Engineering - Islamic University of Gaza"
+                          value={profileData.education}
+                          onChange={(e) => setProfileData({ ...profileData, education: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {isRTL ? 'رابط معرض الأعمال أو GitHub' : 'Portfolio / GitHub / LinkedIn'}
+                        </label>
+                        <input
+                          type="url"
+                          placeholder="https://github.com/username or https://portfolio.com"
+                          value={profileData.portfolioUrl}
+                          onChange={(e) => setProfileData({ ...profileData, portfolioUrl: e.target.value })}
+                          className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        {isRTL ? 'النبذة الشخصية وخبراتك السابقة' : 'About Me / Professional Bio'}
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={profileData.bio}
+                        onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
+                        placeholder="أكتب نبذة موجزة ومقنعة عن خلفيتك المهنية، أسلوب عملك، وكيف تنجز مهامك عن بعد..."
+                        className="w-full text-xs sm:text-sm p-4 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="pt-4 border-t border-slate-100 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={profileSaving}
+                      className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-md shadow-blue-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>{profileSaving ? (isRTL ? 'جارٍ الحفظ...' : 'Saving...') : (isRTL ? 'حفظ وتحديث الملف المهني' : 'Save Profile Changes')}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 5: ADMIN ANALYTICS DASHBOARD                          */}
         {/* ========================================================= */}
         {activeTab === 'dashboard' && currentUser?.role === 'Admin' && (
           <div className="space-y-6">
