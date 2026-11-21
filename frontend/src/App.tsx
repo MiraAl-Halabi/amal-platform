@@ -33,7 +33,8 @@ import {
   PlusCircle,
   XCircle,
   Phone,
-  Mail
+  Mail,
+  Plus
 } from 'lucide-react';
 
 interface Organization {
@@ -132,6 +133,25 @@ export function App() {
   const [recruiterApplications, setRecruiterApplications] = useState<CandidateApplication[]>([]);
   const [selectedApplicantModal, setSelectedApplicantModal] = useState<CandidateApplication | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // New Job Creation Modal State
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [jobFormSubmitting, setJobFormSubmitting] = useState(false);
+  const [jobForm, setJobForm] = useState({
+    title: '',
+    titleAr: '',
+    category: 'Software Engineering',
+    type: 'Remote',
+    arrangement: 'Remote',
+    location: 'Remote (Gaza / Global)',
+    experienceLevel: 'Mid-Level',
+    minSalary: 1500,
+    maxSalary: 2500,
+    currency: 'USD',
+    description: '',
+    descriptionAr: '',
+    requirements: ''
+  });
 
   // Toggle Language
   const toggleLanguage = () => {
@@ -259,6 +279,72 @@ export function App() {
       }
     } catch (e) {
       setStatusMessage({ type: 'error', text: 'Confirmation error' });
+    }
+  };
+
+  const handleCreateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jobForm.title.trim()) {
+      setStatusMessage({ type: 'error', text: isRTL ? 'يرجى إدخال عنوان الوظيفة' : 'Please enter job title' });
+      return;
+    }
+
+    try {
+      setJobFormSubmitting(true);
+      const orgId = currentUser?.organization?.id || '11111111-1111-1111-1111-111111111111';
+      const payload = {
+        organizationId: orgId,
+        title: jobForm.title,
+        titleAr: jobForm.titleAr || jobForm.title,
+        description: jobForm.description || "Exciting remote opportunity connecting global work with talented Gaza professionals.",
+        descriptionAr: jobForm.descriptionAr || "فرصة عمل متميزة عن بعد لكفاءات ومحترفي قطاع غزة.",
+        category: jobForm.category,
+        type: jobForm.type,
+        arrangement: jobForm.arrangement,
+        location: jobForm.location,
+        experienceLevel: jobForm.experienceLevel,
+        minSalary: Number(jobForm.minSalary),
+        maxSalary: Number(jobForm.maxSalary),
+        currency: jobForm.currency,
+        requirements: jobForm.requirements || "- Strong problem solving skills\n- Excellent remote communication"
+      };
+
+      const res = await fetch('/api/v1/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        setStatusMessage({ 
+          type: 'success', 
+          text: isRTL ? 'تم نشر الوظيفة بنجاح وأصبحت متاحة للتقديم!' : 'Job opportunity posted and published live!' 
+        });
+        setShowJobModal(false);
+        // Reset form
+        setJobForm({
+          title: '',
+          titleAr: '',
+          category: 'Software Engineering',
+          type: 'Remote',
+          arrangement: 'Remote',
+          location: 'Remote (Gaza / Global)',
+          experienceLevel: 'Mid-Level',
+          minSalary: 1500,
+          maxSalary: 2500,
+          currency: 'USD',
+          description: '',
+          descriptionAr: '',
+          requirements: ''
+        });
+        fetchOpportunities();
+      } else {
+        setStatusMessage({ type: 'error', text: 'Failed to post job opportunity' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: 'Error connecting to API server' });
+    } finally {
+      setJobFormSubmitting(false);
     }
   };
 
@@ -413,39 +499,53 @@ export function App() {
             )}
           </nav>
 
-          {/* Quick Role Switcher */}
-          <div className="hidden lg:flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl">
-            <span className="text-[11px] font-bold text-slate-500 px-2">{isRTL ? 'الحساب التجريبي:' : 'Demo User:'}</span>
-            <button 
-              onClick={() => handleQuickLogin('ahmed.gaza@example.com', 'seeker123')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                currentUser?.email === 'ahmed.gaza@example.com' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-            >
-              {isRTL ? 'باحث (أحمد)' : 'Seeker'}
-            </button>
-            <button 
-              onClick={() => handleQuickLogin('recruiter@skylinedigital.example', 'recruiter123')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                currentUser?.email === 'recruiter@skylinedigital.example' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-            >
-              {isRTL ? 'صاحب عمل (طارق)' : 'Recruiter'}
-            </button>
-            <button 
-              onClick={() => handleQuickLogin('admin@amal.ps', 'admin123')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                currentUser?.email === 'admin@amal.ps' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-            >
-              {isRTL ? 'إدارة' : 'Admin'}
-            </button>
+          {/* Recruiter Action & Demo Switcher */}
+          <div className="flex items-center gap-3">
+            {/* Post Job Button (Directly Visible for Recruiters) */}
+            {currentUser?.role === 'Recruiter' && (
+              <button
+                onClick={() => setShowJobModal(true)}
+                className="hidden sm:inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isRTL ? 'إعلان عن فرصة جديدة' : 'Post New Job'}</span>
+              </button>
+            )}
+
+            {/* Quick Role Switcher */}
+            <div className="hidden lg:flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl">
+              <span className="text-[11px] font-bold text-slate-500 px-2">{isRTL ? 'الحساب التجريبي:' : 'Demo User:'}</span>
+              <button 
+                onClick={() => handleQuickLogin('ahmed.gaza@example.com', 'seeker123')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  currentUser?.email === 'ahmed.gaza@example.com' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-200/60'
+                }`}
+              >
+                {isRTL ? 'باحث (أحمد)' : 'Seeker'}
+              </button>
+              <button 
+                onClick={() => handleQuickLogin('recruiter@skylinedigital.example', 'recruiter123')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  currentUser?.email === 'recruiter@skylinedigital.example' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-200/60'
+                }`}
+              >
+                {isRTL ? 'صاحب عمل (طارق)' : 'Recruiter'}
+              </button>
+              <button 
+                onClick={() => handleQuickLogin('admin@amal.ps', 'admin123')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  currentUser?.email === 'admin@amal.ps' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-200/60'
+                }`}
+              >
+                {isRTL ? 'إدارة' : 'Admin'}
+              </button>
+            </div>
           </div>
 
           {/* Mobile Menu Button */}
@@ -460,6 +560,16 @@ export function App() {
         {/* Mobile Dropdown Menu */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 shadow-xl">
+            {currentUser?.role === 'Recruiter' && (
+              <button
+                onClick={() => { setShowJobModal(true); setMobileMenuOpen(false); }}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-bold shadow-xs mb-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isRTL ? 'إعلان عن فرصة جديدة' : 'Post New Job'}</span>
+              </button>
+            )}
+
             <div className="flex flex-col gap-1.5 text-sm font-semibold">
               <button 
                 onClick={() => { setActiveTab('browse'); setMobileMenuOpen(false); }}
@@ -716,14 +826,24 @@ export function App() {
         {/* ========================================================= */}
         {activeTab === 'recruiter-pipeline' && (
           <div className="space-y-6">
-            {/* Header with Visual Instructions */}
+            {/* Header with Visual Instructions & Post Job Trigger */}
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
                 <div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-bold mb-2">
-                    <Building2 className="w-3.5 h-3.5" />
-                    <span>{currentUser?.organization?.name || 'Skyline Digital Solutions'}</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-bold">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>{currentUser?.organization?.name || 'Skyline Digital Solutions'}</span>
+                    </span>
+                    <button
+                      onClick={() => setShowJobModal(true)}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-xs font-bold transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isRTL ? 'إضافة فرصة جديدة' : '+ Post Job'}</span>
+                    </button>
                   </div>
+
                   <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                     {isRTL ? 'مسار إدارة وتوظيف المرشحين (Hiring Pipeline)' : 'Candidate Hiring Pipeline'}
                   </h2>
@@ -1128,6 +1248,214 @@ export function App() {
                 </button>
               )}
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* RECRUITER POST NEW JOB MODAL (Feature #1)                  */}
+      {/* ========================================================= */}
+      {showJobModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto space-y-6">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-start pb-4 border-b border-slate-100">
+              <div>
+                <span className="text-xs font-black px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full">
+                  {currentUser?.organization?.name || 'Skyline Digital Solutions'}
+                </span>
+                <h3 className="text-2xl font-black text-slate-900 mt-2">
+                  {isRTL ? 'إعلان عن فرصة عمل جديدة' : 'Create & Post Job Opportunity'}
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+                  {isRTL 
+                    ? 'سيتم نشر هذه الفرصة مباشرة لكفاءات ومحترفي قطاع غزة.' 
+                    : 'This job will be published immediately to professionals in Gaza.'}
+                </p>
+              </div>
+
+              <button 
+                onClick={() => setShowJobModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-black text-2xl p-1 leading-none cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleCreateJob} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'المسمى الوظيفي (إنجليزي) *' : 'Job Title (English) *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Senior Frontend Engineer"
+                    value={jobForm.title}
+                    onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'المسمى الوظيفي (عربي)' : 'Job Title (Arabic)'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: مهندس واجهات أمامية متقدم"
+                    value={jobForm.titleAr}
+                    onChange={(e) => setJobForm({ ...jobForm, titleAr: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'المجال التخصصي' : 'Category'}
+                  </label>
+                  <select
+                    value={jobForm.category}
+                    onChange={(e) => setJobForm({ ...jobForm, category: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                  >
+                    <option value="Software Engineering">Software Engineering</option>
+                    <option value="Design & Creative">Design & Creative</option>
+                    <option value="Medicine & Healthcare">Medicine & Healthcare</option>
+                    <option value="Education & Translation">Education & Translation</option>
+                    <option value="Marketing & Sales">Marketing & Sales</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'طبيعة العمل' : 'Arrangement'}
+                  </label>
+                  <select
+                    value={jobForm.arrangement}
+                    onChange={(e) => setJobForm({ ...jobForm, arrangement: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                  >
+                    <option value="Remote">Remote (عن بُعد)</option>
+                    <option value="Hybrid">Hybrid (مدمج)</option>
+                    <option value="Onsite">Onsite (حضوري)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'مستوى الخبرة' : 'Experience Level'}
+                  </label>
+                  <select
+                    value={jobForm.experienceLevel}
+                    onChange={(e) => setJobForm({ ...jobForm, experienceLevel: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium bg-white"
+                  >
+                    <option value="Entry-Level">Entry-Level (مبتدئ)</option>
+                    <option value="Mid-Level">Mid-Level (متوسط)</option>
+                    <option value="Senior">Senior (متقدم)</option>
+                    <option value="Lead">Lead / Director</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Salary Range */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'الحد الأدنى للراتب' : 'Min Salary'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={jobForm.minSalary}
+                      onChange={(e) => setJobForm({ ...jobForm, minSalary: Number(e.target.value) })}
+                      className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                    />
+                    <span className="absolute end-3 top-3 text-xs text-slate-400 font-bold">$ USD</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'الحد الأعلى للراتب' : 'Max Salary'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={jobForm.maxSalary}
+                      onChange={(e) => setJobForm({ ...jobForm, maxSalary: Number(e.target.value) })}
+                      className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                    />
+                    <span className="absolute end-3 top-3 text-xs text-slate-400 font-bold">$ USD</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {isRTL ? 'نطاق الموقع الجغرافي' : 'Location Scope'}
+                  </label>
+                  <input
+                    type="text"
+                    value={jobForm.location}
+                    onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {isRTL ? 'الوصف الوظيفي والمسؤوليات (عربي أو إنجليزي)' : 'Job Description & Role Summary'}
+                </label>
+                <textarea
+                  rows={3}
+                  value={jobForm.description}
+                  onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+                  placeholder="Describe key responsibilities and work environment..."
+                  className="w-full text-xs sm:text-sm p-3.5 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                />
+              </div>
+
+              {/* Requirements */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {isRTL ? 'المتطلبات والمهارات المطلوبة' : 'Skills & Requirements'}
+                </label>
+                <textarea
+                  rows={3}
+                  value={jobForm.requirements}
+                  onChange={(e) => setJobForm({ ...jobForm, requirements: e.target.value })}
+                  placeholder="- 3+ years experience with React/TypeScript&#10;- Good async English communication&#10;- Gaza-based remote workflow flexibility"
+                  className="w-full text-xs sm:text-sm p-3.5 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowJobModal(false)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  {isRTL ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={jobFormSubmitting}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold transition shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                >
+                  {jobFormSubmitting ? (isRTL ? 'جارٍ النشر...' : 'Publishing...') : (isRTL ? 'نشر الوظيفة فوراً' : 'Publish Job Live')}
+                </button>
+              </div>
+            </form>
 
           </div>
         </div>

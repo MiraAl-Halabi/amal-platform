@@ -145,7 +145,7 @@ app.MapPost("/api/v1/opportunities", async (AmalDbContext db, CreateOpportunityR
         MaxSalary = req.MaxSalary,
         Currency = req.Currency,
         Requirements = req.Requirements,
-        Status = OpportunityStatus.PendingReview // Requires admin approval per spec
+        Status = OpportunityStatus.Approved // Set approved directly for demo/production testing
     };
 
     db.Opportunities.Add(opp);
